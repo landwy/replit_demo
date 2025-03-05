@@ -107,7 +107,7 @@ class DataParser:
                     continue
 
                 data = line.split()
-                if len(data) >= 7:  # Ensure we have all required fields
+                if len(data) >= 12:  # Ensure we have all required fields
                     buildings.append({
                         'point1_X': float(data[0]),
                         'point1_Y': float(data[1]),
