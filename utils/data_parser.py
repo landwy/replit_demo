@@ -94,20 +94,28 @@ class DataParser:
     def parse_building_data(filename):
         """
         Parse building information
-        Format: X Y Z HEIGHT
+        Format: point1_X point1_Y point1_Z point2_X point2_Y point2_Z height
         Returns: List of buildings with ground coordinates and heights
         """
         buildings = []
 
         with open(filename, 'r') as f:
             for line in f:
-                data = line.strip().split()
-                if len(data) >= 4:  # Ensure we have enough fields
+                line = line.strip()
+                # Skip comment lines
+                if line.startswith('#'):
+                    continue
+
+                data = line.split()
+                if len(data) >= 7:  # Ensure we have all required fields
                     buildings.append({
-                        'X': float(data[0]),
-                        'Y': float(data[1]),
-                        'Z': float(data[2]),
-                        'height': float(data[3])
+                        'point1_X': float(data[0]),
+                        'point1_Y': float(data[1]),
+                        'point1_Z': float(data[2]),
+                        'point2_X': float(data[3]),
+                        'point2_Y': float(data[4]),
+                        'point2_Z': float(data[5]),
+                        'height': float(data[6])
                     })
 
         logging.info(f"Total buildings processed: {len(buildings)}")
