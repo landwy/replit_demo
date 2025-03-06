@@ -21,8 +21,8 @@ class CoordinateTransform:
         lat = atan2(z + CoordinateTransform.e2*(1-CoordinateTransform.e2)*sin(theta)**3, 
                    p - CoordinateTransform.e2*cos(theta)**3)
         lon = atan2(y, x)
-        N = CoordinateTransform.a/sqrt(1-CoordinateTransform.e2*sin(lat)**2)
-        alt = p/cos(lat) - N
+        n = CoordinateTransform.a/sqrt(1-CoordinateTransform.e2*sin(lat)**2)
+        alt = p/cos(lat) - n
 
         return np.degrees(lat), np.degrees(lon), alt
 
@@ -36,10 +36,10 @@ class CoordinateTransform:
         lat_rad = np.radians(lat)
         lon_rad = np.radians(lon)
 
-        N = CoordinateTransform.a/sqrt(1-CoordinateTransform.e2*sin(lat_rad)**2)
-        x = (N + alt)*cos(lat_rad)*cos(lon_rad)
-        y = (N + alt)*cos(lat_rad)*sin(lon_rad)
-        z = (N*(1-CoordinateTransform.e2) + alt)*sin(lat_rad)
+        n = CoordinateTransform.a/sqrt(1-CoordinateTransform.e2*sin(lat_rad)**2)
+        x = (n + alt)*cos(lat_rad)*cos(lon_rad)
+        y = (n + alt)*cos(lat_rad)*sin(lon_rad)
+        z = (n*(1-CoordinateTransform.e2) + alt)*sin(lat_rad)
 
         return x, y, z
 

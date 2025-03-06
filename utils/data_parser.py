@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import logging
+from .coordinate_transform import CoordinateTransform
 
 class DataParser:
     @staticmethod
@@ -16,7 +17,7 @@ class DataParser:
         satellite_data = {}
         current_epoch = None
 
-        with open(filename, 'r') as f:
+        with open(filename, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if line.startswith('time'):
@@ -50,7 +51,7 @@ class DataParser:
         """
         position_data = {}
 
-        with open(filename, 'r') as f:
+        with open(filename, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 # Skip comment lines starting with %
@@ -71,7 +72,7 @@ class DataParser:
                         lon = float(data[3])  # longitude in degrees
                         height = float(data[4])  # height in meters
 
-                        from .coordinate_transform import CoordinateTransform
+                        #from .coordinate_transform import CoordinateTransform
                         x, y, z = CoordinateTransform.lla_to_ecef(lat, lon, height)
 
                         position_data[timestamp] = {
@@ -99,7 +100,7 @@ class DataParser:
         """
         buildings = []
 
-        with open(filename, 'r') as f:
+        with open(filename, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 # Skip comment lines
@@ -107,15 +108,38 @@ class DataParser:
                     continue
 
                 data = line.split()
-                if len(data) >= 12:  # Ensure we have all required fields
+                if len(data) >= 5:  # Ensure we have all required fields
+
+                    lat1, lon1, lat2, lon2, height = map(float, data)
+
+                    # 将经纬度坐标转换为ECEF坐标
+                    point1_X, point1_Y, point1_Z = CoordinateTransform.lla_to_ecef(lat1, lon1, height)
+                    point2_X, point2_Y, point2_Z = CoordinateTransform.lla_to_ecef(lat2, lon2, height)
+
+                    # # 将数据添加到列表中
+                    # buildings.append({
+                    #     'point1': (point1_X, point1_Y, point1_Z),
+                    #     'point2': (point2_X, point2_Y, point2_Z),
+                    #     'height': height
+                    # })
+
+                    # buildings.append({
+                    #     'point1_X': float(data[0]),
+                    #     'point1_Y': float(data[1]),
+                    #     'point1_Z': float(data[2]),
+                    #     'point2_X': float(data[3]),
+                    #     'point2_Y': float(data[4]),
+                    #     'point2_Z': float(data[5]),
+                    #     'height': float(data[6])
+                    # })
                     buildings.append({
-                        'point1_X': float(data[0]),
-                        'point1_Y': float(data[1]),
-                        'point1_Z': float(data[2]),
-                        'point2_X': float(data[3]),
-                        'point2_Y': float(data[4]),
-                        'point2_Z': float(data[5]),
-                        'height': float(data[6])
+                        'point1_X': float(point1_X),
+                        'point1_Y': float(point1_Y),
+                        'point1_Z': float(point1_Z),
+                        'point2_X': float(point2_X),
+                        'point2_Y': float(point2_Y),
+                        'point2_Z': float(point2_Z),
+                        'height': float(data[4])
                     })
 
         logging.info(f"Total buildings processed: {len(buildings)}")

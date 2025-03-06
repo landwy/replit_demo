@@ -1,7 +1,7 @@
 import numpy as np
 
 class GridGenerator:
-    def __init__(self, grid_spacing=2.0, search_radius=50.0):
+    def __init__(self, grid_spacing=2.0, search_radius=30.0):
         """
         Initialize grid generator with spacing and search radius
         """

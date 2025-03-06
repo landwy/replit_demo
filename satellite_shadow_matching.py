@@ -3,9 +3,12 @@ import logging
 from utils.data_parser import DataParser
 from utils.grid_generator import GridGenerator
 from utils.visibility_calculator import VisibilityCalculator
+import simplekml
+from pyproj import Proj, transform
+
 
 class SatelliteShadowMatching:
-    def __init__(self, grid_spacing=2.0, search_radius=50.0, snr_threshold=30):
+    def __init__(self, grid_spacing=2.0, search_radius=30.0, snr_threshold=37):
         """
         Initialize shadow matching system
         """
@@ -107,7 +110,22 @@ class SatelliteShadowMatching:
             for epoch, result in results.items():
                 f.write(f"{epoch},{result['X']},{result['Y']},{result['Z']},"
                        f"{result['score']},{result['num_best_points']}\n")
-        
+
+        #导出kml文件
+        kml = simplekml.Kml()
+        proj_ecef = Proj(proj='geocent', ellps='WGS84', datum='WGS84')
+        proj_lla = Proj(proj='latlong', ellps='WGS84', datum='WGS84')
+        for epoch, result in results.items():
+            lon, lat, alt = transform(proj_ecef, proj_lla, result['X'], result['Y'], result['Z'], radians=False)
+            pnt = kml.newpoint(name=f"Epoch {epoch}")
+            pnt.coords = [(lon, lat, alt)]  # KML 需要 (经度, 纬度, 高度)
+            pnt.altitudemode = simplekml.AltitudeMode.clamptoground  # 绝对高度
+            #pnt.description = f"Score: {data['score']}\nBest Points: {data['num_best_points']}"
+            pnt.style.labelstyle.scale = 1  # 文字大小
+            pnt.style.iconstyle.icon.href = "http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png"
+            
+        kml.save("sm_pos.kml")
+
         self.logger.info("Processing complete")
         return results
 
