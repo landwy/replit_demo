@@ -2,7 +2,15 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import logging
-from .coordinate_transform import CoordinateTransform
+from shapely.geometry import Polygon, Point
+# from pyproj import Transformer
+from utils.coordinate_transform import CoordinateTransform
+
+
+#wgs84_to_ecef = CoordinateTransform.
+#ecef_to_wgs84 = Transformer.from_crs("EPSG:4978", "EPSG:4326", always_xy=True)
+
+transformer = CoordinateTransform()
 
 class DataParser:
     @staticmethod
@@ -67,21 +75,19 @@ class DataParser:
                         time_str = data[1]
                         timestamp = f"{date_str} {time_str}"
 
-                        # Convert lat/lon to ECEF coordinates
-                        lat = float(data[2])  # latitude in degrees
-                        lon = float(data[3])  # longitude in degrees
-                        height = float(data[4])  # height in meters
+                        x = float(data[2])  # latitude in degrees
+                        y = float(data[3])  # longitude in degrees
+                        z = float(data[4])  # height in meters
 
-                        #from .coordinate_transform import CoordinateTransform
-                        x, y, z = CoordinateTransform.lla_to_ecef(lat, lon, height)
-
+                        # position_data[timestamp] = {
+                        #     'X': x,
+                        #     'Y': y,
+                        #     'Z': z,
+                        # }
                         position_data[timestamp] = {
-                            'X': x,
-                            'Y': y,
-                            'Z': z,
-                            'original_lat': lat,
-                            'original_lon': lon,
-                            'original_height': height
+                            'lat': x,
+                            'lon': y,
+                            'alt': z,
                         }
                         logging.debug(f"Processed position data for {timestamp}")
                     except (ValueError, IndexError) as e:
@@ -91,56 +97,67 @@ class DataParser:
         logging.info(f"Total positions processed: {len(position_data)}")
         return position_data
 
+
     @staticmethod
-    def parse_building_data(filename):
+    def parse_building_data(file_path):
         """
-        Parse building information
-        Format: point1_X point1_Y point1_Z point2_X point2_Y point2_Z height
-        Returns: List of buildings with ground coordinates and heights
+        从TXT文件加载建筑信息，并返回包含建筑多边形、高度和中心点的列表。
+        :param file_path: TXT文件路径
+        :return: buildings (列表，每个元素为 {"polygon": Polygon, "height": float, "center": Point})
         """
         buildings = []
 
-        with open(filename, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                # Skip comment lines
-                if line.startswith('#'):
+        with open(file_path, 'r', encoding='utf-8') as file:
+            for line in file:
+                parts = line.strip().split(' ')
+                if len(parts) < 6 or len(parts) % 2 != 0:
+                    print(f"⚠️ 警告：跳过格式错误的行 -> {line.strip()}")
                     continue
 
-                data = line.split()
-                if len(data) >= 5:  # Ensure we have all required fields
+                    # 解析建筑ID（可忽略）
+                building_id = parts[0]
 
-                    lat1, lon1, lat2, lon2, height = map(float, data)
+                # 解析建筑高度
+                try:
+                    height = float(parts[1])
+                except ValueError:
+                    print(f"⚠️ 警告：建筑 {building_id} 高度解析失败，跳过该建筑")
+                    continue
 
-                    # 将经纬度坐标转换为ECEF坐标
-                    point1_X, point1_Y, point1_Z = CoordinateTransform.lla_to_ecef(lat1, lon1, height)
-                    point2_X, point2_Y, point2_Z = CoordinateTransform.lla_to_ecef(lat2, lon2, height)
+                # 解析中心点坐标
+                try:
+                    center_lon, center_lat = float(parts[2]), float(parts[3])
+                except ValueError:
+                    print(f"⚠️ 警告：建筑 {building_id} 中心点坐标解析失败，跳过该建筑")
+                    continue
 
-                    # # 将数据添加到列表中
-                    # buildings.append({
-                    #     'point1': (point1_X, point1_Y, point1_Z),
-                    #     'point2': (point2_X, point2_Y, point2_Z),
-                    #     'height': height
-                    # })
+                # 解析角点坐标（成对读取）
+                try:
+                    coordinates = [(float(parts[i]), float(parts[i + 1])) for i in range(4, len(parts), 2)]
+                except ValueError:
+                    print(f"⚠️ 警告：建筑 {building_id} 角点坐标解析失败，跳过该建筑")
+                    continue
 
-                    # buildings.append({
-                    #     'point1_X': float(data[0]),
-                    #     'point1_Y': float(data[1]),
-                    #     'point1_Z': float(data[2]),
-                    #     'point2_X': float(data[3]),
-                    #     'point2_Y': float(data[4]),
-                    #     'point2_Z': float(data[5]),
-                    #     'height': float(data[6])
-                    # })
-                    buildings.append({
-                        'point1_X': float(point1_X),
-                        'point1_Y': float(point1_Y),
-                        'point1_Z': float(point1_Z),
-                        'point2_X': float(point2_X),
-                        'point2_Y': float(point2_Y),
-                        'point2_Z': float(point2_Z),
-                        'height': float(data[4])
-                    })
+                # 确保至少是一个有效的多边形（>=3个点）
+                if len(coordinates) < 3:
+                    print(f"⚠️ 警告：建筑 {building_id} 角点数量不足，跳过该建筑")
+                    continue
 
-        logging.info(f"Total buildings processed: {len(buildings)}")
-        return buildings
+                # 中心点转换
+                center_x, center_y, center_z = transformer.convert_wgs_to_ecef(center_lon, center_lat, 0)
+                # 角点转换
+                ecef_coordinates = [transformer.convert_wgs_to_ecef(lon, lat, 0) for lon, lat in coordinates]
+
+                # 创建 Shapely 多边形对象
+                #polygon = Polygon([(x, y) for x, y, z in ecef_coordinates])
+                #polygon = Polygon([(p[0], p[1]) for p in ecef_coordinates])  # 确保是 (x, y) 坐标
+                polygon = Polygon([(p[0], p[1]) for p in coordinates])  # 确保是 (x, y) 坐标
+                center_point = Point(center_x, center_y, center_z)
+
+                # 存储建筑信息
+                buildings.append({"polygon": polygon, "height": height, "center": center_point})
+
+            return buildings
+
+
+

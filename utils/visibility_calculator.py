@@ -1,61 +1,209 @@
 import numpy as np
 from .coordinate_transform import CoordinateTransform
+from shapely.geometry import Polygon, Point, LineString
+import trimesh
+from pyproj import Transformer
 
 class VisibilityCalculator:
     def __init__(self, snr_threshold=30):
         self.snr_threshold = snr_threshold
         self.coord_transform = CoordinateTransform()
 
-    def predict_satellite_visibility(self, sat_pos, receiver_pos, buildings):
-        """
-        Predict satellite visibility based on building geometry
-        Buildings are simplified as vertical rectangles with two ground points and height
-        """
-        # Convert satellite position to ENU
-        e, n, u = self.coord_transform.ecef_to_enu(
-            sat_pos['X'], sat_pos['Y'], sat_pos['Z'],
-            receiver_pos['X'], receiver_pos['Y'], receiver_pos['Z']
-        )
 
-        # Calculate satellite azimuth and elevation
-        sat_azimuth, sat_elevation = self.coord_transform.calculate_azimuth_elevation(e, n, u)
+    @staticmethod
+    def should_check_building(sat_ecef, ground_ecef, building_ecef):
+        """判断是否需要检查建筑遮挡"""
+        az_s = compute_azimuth(ground_ecef, sat_ecef)  # 计算卫星方位角
+        az_b = compute_azimuth(ground_ecef, building_ecef)  # 计算建筑中心点方位角
 
-        # Check each building's blocking effect
+        delta_az = abs(az_s - az_b) % 360  # 计算方位角夹角
+        if abs(delta_az - 180) < 15:  # 若夹角接近 180°（阈值可调整）
+            return False  # 说明卫星和地面点在建筑的同侧，无需检测
+        return True  # 需要进行遮挡检测
+
+    @staticmethod
+    def predict_satellite_visibility(sat_ecef, ground_ecef, buildings):
+        """
+        判断卫星到地面点的信号是否被建筑遮挡。
+        :param sat_ecef: 卫星ECEF坐标 (x, y, z)
+        :param ground_ecef: 地面点ECEF坐标 (x, y, z)
+        :param buildings: 解析出的建筑信息列表
+        :return: 是否被遮挡 (True = 遮挡, False = 无遮挡)
+        """
+        #ground_x, ground_y, ground_z = ground_ecef
+        #satellite_point = (sat_ecef['X'], sat_ecef['Y'], sat_ecef['Z'])
+        # #signal_path = LineString([satellite_point, ground_point])  # 生成卫星到地面点的直线
+
+        sat_x, sat_y, sat_z = sat_ecef['X'], sat_ecef['Y'], sat_ecef['Z']
+        ground_x, ground_y, ground_z = ground_ecef['X'], ground_ecef['Y'], ground_ecef['Z']
+        signal_path = LineString([(sat_x, sat_y, sat_z), (ground_x, ground_y, ground_z)])
+
         for building in buildings:
-            # Get building's two ground points in ENU
-            e1, n1, _ = self.coord_transform.ecef_to_enu(
-                building['point1_X'], building['point1_Y'], building['point1_Z'],
-                receiver_pos['X'], receiver_pos['Y'], receiver_pos['Z']
-            )
-            e2, n2, _ = self.coord_transform.ecef_to_enu(
-                building['point2_X'], building['point2_Y'], building['point2_Z'],
-                receiver_pos['X'], receiver_pos['Y'], receiver_pos['Z']
-            )
+            base_polygon = building["polygon"]
+            height = building["height"]
 
-            # Calculate building face azimuth (perpendicular to the line between points)
-            building_line_azimuth = np.degrees(np.arctan2(e2 - e1, n2 - n1))
-            building_face_azimuth = (building_line_azimuth + 90) % 360
+            # 将地面多边形扩展到3D，形成建筑侧面
+            building_walls = []
+            coords = list(base_polygon.exterior.coords)
+            for i in range(len(coords) - 1):
+                p1 = (coords[i][0], coords[i][1], 0)
+                p2 = (coords[i + 1][0], coords[i + 1][1], 0)
+                p3 = (coords[i + 1][0], coords[i + 1][1], height)
+                p4 = (coords[i][0], coords[i][1], height)
 
-            # Calculate distance to building face
-            # Project receiver-building vector onto normal vector of building face
-            normal_vector = np.array([np.cos(np.radians(building_face_azimuth)), 
-                                    np.sin(np.radians(building_face_azimuth))])
-            receiver_to_building = np.array([e1, n1])  # Vector from receiver to building point 1
-            distance = abs(np.dot(receiver_to_building, normal_vector))
+                wall = Polygon([p1, p2, p3, p4])
+                building_walls.append(wall)
 
-            # Calculate building elevation angle
-            building_elevation = np.degrees(np.arctan2(building['height'], distance))
-
-            # Check if satellite is blocked by this building face
-            azimuth_diff = abs((sat_azimuth - building_face_azimuth + 180) % 360 - 180)
-            if (azimuth_diff < 90 and  # Satellite is in front of building face
-                sat_elevation < building_elevation):  # Satellite is below building top edge
-                return False
-
-        return True
+            # 检查信号路径是否与任何建筑侧面相交
+            for wall in building_walls:
+                if signal_path.intersects(wall):
+                    return True  # 信号被遮挡
+        return False  # 信号未遮挡
 
     def check_observed_visibility(self, snr):
         """
         Check satellite visibility based on SNR
         """
-        return snr >= self.snr_threshold
+        return snr >= self.snr_threshold * 1000
+
+
+
+
+
+
+
+def compute_azimuth(ecef_source, ecef_target):
+    """计算 ecef_target 相对于 ecef_source 的方位角（Azimuth）"""
+    dx, dy, _ = np.array(ecef_target) - np.array(ecef_source)
+    azimuth = np.degrees(np.arctan2(dy, dx)) % 360
+    return azimuth
+
+
+# ------------------  建筑网格创建 ------------------
+
+def create_building_mesh(polygon_2d, height):
+    """基于 ENU 坐标系生成建筑网格（底面 polygon_2d，顶面沿 U 轴提升 height）"""
+    vertices_bottom = np.hstack([polygon_2d, np.zeros((len(polygon_2d), 1))])
+    vertices_top = np.hstack([polygon_2d, np.full((len(polygon_2d), 1), height)])
+    vertices = np.vstack([vertices_bottom, vertices_top])
+
+    faces = []
+    n = len(polygon_2d)
+
+    # 底面三角剖分
+    for i in range(1, n - 1):
+        faces.append([0, i, i + 1])
+
+    # 顶面三角剖分
+    for i in range(1, n - 1):
+        faces.append([n, n + i, n + i + 1])
+
+    # 侧面四边形拆分为三角形
+    for i in range(n):
+        i_next = (i + 1) % n
+        i_top, i_next_top = i + n, i_next + n
+        faces.append([i, i_next, i_next_top])
+        faces.append([i, i_next_top, i_top])
+
+    return trimesh.Trimesh(vertices=vertices, faces=faces)
+
+
+def preprocess_buildings(buildings, ref_ecef):
+    """预处理建筑物，将其转换为 ENU 坐标网格"""
+    ref_lon, ref_lat, ref_alt = CoordinateTransform.convert_ecef_to_wgs(*ref_ecef)
+
+    building_meshes = []
+    for building in buildings:
+        polygon_geo = building["polygon"]
+        height = building["height"]
+        center_point = building["center_point"]
+        #center_point=[CoordinateTransform().convert_ecef_to_enu(center_point['X'], center_point['Y'], center_point['Z'], ref_lat, ref_lon, ref_alt)[:2] ]
+
+        # 将建筑底面转换为 ECEF 坐标
+        ecef_points = [CoordinateTransform().convert_wgs_to_ecef(lat, lon, 0) for lat, lon in polygon_geo]
+
+        # 转换为 ENU 坐标（相对于 ground 点）
+        enu_2d = [CoordinateTransform().convert_ecef_to_enu(x, y, z, ref_lat, ref_lon, ref_alt)[:2] for x, y, z in ecef_points]
+
+        # 创建建筑 3D 网格
+        building_mesh = create_building_mesh(np.array(enu_2d), height)
+        # building_meshes.append(building_mesh)
+
+        building_info = {
+            "building_mesh": building_mesh,
+            "center_point": center_point
+        }
+        building_meshes.append(building_info)
+
+    return building_meshes
+
+
+# ------------------  遮挡检测逻辑 ------------------
+
+def should_check_building(sat_ecef, ground_ecef, building_ecef):
+    """判断是否需要检查建筑遮挡"""
+    az_s = compute_azimuth(ground_ecef, sat_ecef)  # 计算卫星方位角
+    az_b = compute_azimuth(ground_ecef, building_ecef)  # 计算建筑中心点方位角
+
+    delta_az = abs(az_s - az_b) % 360  # 计算方位角夹角
+    if abs(delta_az - 180) < 15:  # 若夹角接近 180°（阈值可调整）
+        return False  # 说明卫星和地面点在建筑的同侧，无需检测
+    return True  # 需要进行遮挡检测
+
+
+def is_occluded(building_meshes, satellite_ecef, ground_ecef):
+    """检测卫星到地面的线段是否被任意建筑遮挡"""
+    ref_lon, ref_lat, ref_alt = CoordinateTransform().convert_ecef_to_wgs(*ground_ecef)
+
+    sat_e, sat_n, sat_u = CoordinateTransform().convert_ecef_to_enu(*satellite_ecef, ref_lat, ref_lon, ref_alt)
+    grd_e, grd_n, grd_u = CoordinateTransform().convert_ecef_to_enu(*ground_ecef, ref_lat, ref_lon, ref_alt)
+
+    start = np.array([sat_e, sat_n, sat_u])
+    end = np.array([grd_e, grd_n, grd_u])
+    direction = end - start
+    length = np.linalg.norm(direction)
+    if length < 1e-6:
+        return False  # 忽略重合点
+    direction /= length
+
+    for mesh in building_meshes:
+        if should_check_building(satellite_ecef, ground_ecef, mesh["center_point"]):
+            locations, _, _ = mesh.ray.intersects_location(ray_origins=[start], ray_directions=[direction])
+            if len(locations) > 0:
+                t = np.dot(locations - start, direction) / length
+                if any((t >= 0) & (t <= 1)):
+                    return True  # 存在遮挡
+    return False
+
+
+# ------------------  主程序 ------------------
+#
+# # 示例建筑数据
+# buildings = [
+#     {
+#         "polygon": [(40.7128, -74.0060), (40.7128, -74.0055), (40.7123, -74.0055), (40.7123, -74.0060)],
+#         "height": 50.0,
+#         "center": geodetic_to_ecef(40.7126, -74.0058, 0)
+#     }
+# ]
+#
+# satellite_positions = [(x_sat, y_sat, z_sat) for _ in range(30)]  # 30 颗卫星
+# ground_points = [(x_ground, y_ground, z_ground) for _ in range(3000)]  # 3000 个地面点
+#
+# occlusion_results = {}
+#
+# for ground_ecef in ground_points:
+#     if ground_ecef not in occlusion_results:
+#         occlusion_results[ground_ecef] = {}
+#
+#     building_meshes = preprocess_buildings(buildings, ground_ecef)
+#
+#     for sat_ecef in satellite_positions:
+#         for building in buildings:
+#             if not should_check_building(sat_ecef, ground_ecef, building["center"]):
+#                 continue
+#
+#             occluded = is_occluded(building_meshes, sat_ecef, ground_ecef)
+#             occlusion_results[ground_ecef][sat_ecef] = occluded
+#
+# print("遮挡计算完成！")
