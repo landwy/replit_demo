@@ -129,11 +129,11 @@ def preprocess_buildings(buildings, ref_ecef):
         building_mesh = create_building_mesh(np.array(enu_2d), height)
         # building_meshes.append(building_mesh)
 
-        building_info = {
-            "building_mesh": building_mesh,
-            "center_point": center_point
-        }
-        building_meshes.append(building_info)
+        # building_info = {
+        #     "building_mesh": building_mesh,
+        #     "center_point": center_point
+        # }
+        building_meshes.append(building_mesh)
 
     return building_meshes
 

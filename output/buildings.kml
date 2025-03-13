@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<name>3D Buildings</name>
+
+<Placemark>
+    <name>Building 0</name>
+    <Polygon>
+        <extrude>1</extrude>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <outerBoundaryIs>
+            <LinearRing>
+                <coordinates>
+                    -2743844.33514231,4701289.630545583,0 -2743856.3194705285,4701282.543086531,0 -2743877.7812808338,4701348.822742749,0 -2743888.8027450414,4701342.745712719,0 -2743844.33514231,4701289.630545583,0
+                </coordinates>
+            </LinearRing>
+        </outerBoundaryIs>
+    </Polygon>
+</Placemark>
+
+<Placemark>
+    <name>Building 1</name>
+    <Polygon>
+        <extrude>1</extrude>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <outerBoundaryIs>
+            <LinearRing>
+                <coordinates>
+                    -2743867.4026064198,4701268.95001626,0 -2743904.7062256862,4701334.962384239,0 -2743909.2088248464,4701344.102576989,0 -2743921.397931806,4701344.894544777,0 -2743968.795873647,4701309.197096382,0 -2744026.6216148636,4701249.666978786,0 -2744051.296626564,4701188.833246965,0 -2744039.9616444353,4701164.548050495,0 -2743867.4026064198,4701268.95001626,0
+                </coordinates>
+            </LinearRing>
+        </outerBoundaryIs>
+    </Polygon>
+</Placemark>
+</Document>
+</kml>
