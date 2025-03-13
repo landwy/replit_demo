@@ -6,6 +6,7 @@ from utils.grid_generator import GridGenerator
 import utils.visibility_calculator as visibility_calculator
 import simplekml
 from pyproj import Proj, transform
+from shapely.geometry import Polygon
 from utils.coordinate_transform import CoordinateTransform
 
 
@@ -32,13 +33,33 @@ class SatelliteShadowMatching:
         """
         self.logger.info(f"Processing epoch with {len(satellite_data)} satellites")
 
+        ref_lat, ref_lon, ref_alt = initial_position
+        ground_ecef = self.transformer.convert_wgs_to_ecef(initial_position['lat'], initial_position['lon'],
+                                                           initial_position['alt'])
+
         # Generate search grid
-        grid_points = self.grid_generator.generate_search_grid(
-            initial_position['X'],
-            initial_position['Y'],
-            initial_position['Z'],
-            buildings
-        )
+        # grid_points = self.grid_generator.generate_search_grid(
+        #     initial_position['X'],
+        #     initial_position['Y'],
+        #     initial_position['Z'],
+        #     buildings
+        # )
+
+        # 初始点为参考点的enu坐标系下的建筑底面多边形
+        buildings_polygon_enu = []
+        for building in buildings:
+            polygon = building["polygon"]
+            ecef_points = [self.transformer.convert_wgs_to_ecef(lat, lon, 0) for lat, lon in polygon.exterior.coords]
+            # 转换为 ENU 坐标（相对于 ground 点）
+            enu_2d = [self.transformer.convert_ecef_to_enu(x, y, z, ref_lat, ref_lon, ref_alt)[:2] for x, y, z
+                      in ecef_points]
+            polygon_enu = Polygon([(p[0], p[1]) for p in enu_2d])  # 确保是 (x, y) 坐标
+            buildings_polygon_enu.append(polygon_enu)
+
+        # 初始点为参考点的enu坐标系下的建筑三维网格，用于判断卫星遮挡
+        building_meshes = visibility_calculator.preprocess_buildings(buildings, ground_ecef)
+
+        grid_points = self.grid_generator.generate_search_grid_enu(30, 2, buildings_polygon_enu)
         self.logger.info(f"Generated {len(grid_points)} candidate points")
 
         # Calculate scores for each grid point
@@ -54,10 +75,19 @@ class SatelliteShadowMatching:
             # Check each satellite
             for sat in satellite_data:
                 # Predict visibility
+                sat_ecef = sat['X'], sat['Y'], sat['Z']
+                predicted_visible = False
+                for building in buildings:
+                    if not visibility_calculator.should_check_building(sat_ecef, ground_ecef, building["center"]):
+                        continue
 
-                predicted_visible = self.visibility_calculator.predict_satellite_visibility(
-                    sat, receiver_pos, buildings
-                )
+                    if visibility_calculator.is_occluded(building_meshes, sat_ecef, ground_ecef):
+                        predicted_visible = True
+                        break
+
+                # predicted_visible = self.visibility_calculator.predict_satellite_visibility(
+                #     sat, receiver_pos, buildings
+                # )
 
                 # Check observed visibility
                 observed_visible = self.visibility_calculator.check_observed_visibility(

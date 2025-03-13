@@ -167,12 +167,11 @@ def is_occluded(building_meshes, satellite_ecef, ground_ecef):
     direction /= length
 
     for mesh in building_meshes:
-        if should_check_building(satellite_ecef, ground_ecef, mesh["center_point"]):
-            locations, _, _ = mesh.ray.intersects_location(ray_origins=[start], ray_directions=[direction])
-            if len(locations) > 0:
-                t = np.dot(locations - start, direction) / length
-                if any((t >= 0) & (t <= 1)):
-                    return True  # 存在遮挡
+        locations, _, _ = mesh.ray.intersects_location(ray_origins=[start], ray_directions=[direction])
+        if len(locations) > 0:
+            t = np.dot(locations - start, direction) / length
+            if any((t >= 0) & (t <= 1)):
+                return True  # 存在遮挡
     return False
 
 

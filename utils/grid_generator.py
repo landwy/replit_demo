@@ -102,17 +102,19 @@ class GridGenerator:
         # ----------------------------------
         safe_points = []
         for pt in candidate_points:
-            in_building = False
-            point=Point(pt)
-            # 遍历所有建筑
-            for building in buildings:
-                polygon = np.array(building["polygon"])
-                # 检查点是否在当前建筑内
-                if is_inside_polygon(pt, polygon):
-                    in_building = True
-                    break
-            # 仅保留不在任何建筑内的点
-            if not in_building:
-                safe_points.append(pt)
+            # in_building = False
+            # point=Point(pt)
+            # # 遍历所有建筑
+            # for building in buildings:
+            #     polygon = np.array(building["polygon"])
+            #     # 检查点是否在当前建筑内
+            #     if is_inside_polygon(pt, polygon):
+            #         in_building = True
+            #         break
+            # # 仅保留不在任何建筑内的点
+            # if not in_building:
+            #     safe_points.append(pt)
+            if not any(Point(pt[0], pt[1]).buffer(1e-2).within(building) for building in buildings):
+                safe_points.append((pt[0], pt[1], 0))
 
         return np.array(safe_points)

@@ -156,6 +156,25 @@ class CoordinateTransform:
 
         return e, n, u
 
+    def convert_enu_to_ecef(self, e, n, u, ref_lat, ref_lon, ref_alt):
+        """将 ENU 坐标转换为 ECEF 坐标"""
+        ref_lat_rad = np.radians(ref_lat)
+        ref_lon_rad = np.radians(ref_lon)
+
+        slon, clon = np.sin(ref_lon_rad), np.cos(ref_lon_rad)
+        slat, clat = np.sin(ref_lat_rad), np.cos(ref_lat_rad)
+
+        dx = -slon * e - slat * clon * n + clat * clon * u
+        dy = clon * e - slat * slon * n + clat * slon * u
+        dz = clat * n + slat * u
+
+        x_ref, y_ref, z_ref = self.wgs_to_ecef.transform(ref_lon, ref_lat, ref_alt)
+        x = x_ref + dx
+        y = y_ref + dy
+        z = z_ref + dz
+
+        return x, y, z
+
 # transformer = CoordinateTransform()
 # # 测试 ECEF -> WGS84
 # x, y, z = 0, 0, 6356752.31  # 预期：纬度接近 90° (极点)
