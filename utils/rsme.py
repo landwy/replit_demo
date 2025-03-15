@@ -9,9 +9,9 @@ def read_csv_file(file_path):
 # 计算误差
 def calculate_errors(data, Xr, Yr, Zr):
     # 提取计算出的X, Y, Z坐标
-    X = data.iloc[:, 2].values
-    Y = data.iloc[:, 3].values
-    Z = data.iloc[:, 4].values
+    X = data.iloc[:, 1].values
+    Y = data.iloc[:, 2].values
+    Z = data.iloc[:, 3].values
 
     # 计算三维误差
     errors_3d = np.sqrt((X - Xr)**2 + (Y - Yr)**2 + (Z - Zr)**2)
@@ -33,7 +33,7 @@ def calculate_errors(data, Xr, Yr, Zr):
 
 # 主函数
 def main():
-    file_path = 'F:\SatelliteShadowTracker\SatelliteShadowTracker\shadow_matching_results1.csv'  # 替换为你的CSV文件路径
+    file_path = 'F:\SatelliteShadowTracker\SatelliteShadowTracker\output\shadow_matching_results.csv'  # 替换为你的CSV文件路径
     Xr = -2743908.236550865  # 替换为真实的X坐标
     Yr = 4701333.74960222  # 替换为真实的Y坐标
     Zr = 3312892.1832351903  # 替换为真实的Z坐标

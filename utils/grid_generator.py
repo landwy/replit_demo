@@ -40,17 +40,69 @@ class GridGenerator:
         return grid_points
 
 
+    @staticmethod
+    def generate_search_grid_ecef(initial_position, radius, grid_spacing, buildings):
+        """
+            生成以中心点为原点、排除建筑区域的圆形网格点
+            :param initial_position: 初始点，字典类型
+            :param radius: 搜索半径（米）
+            :param grid_spacing: 网格间距（米）
+            :param buildings: 建筑列表，每个元素包含ENU坐标系下的多边形顶点
+                             示例结构：[{"polygon": [[e1,n1], [e2,n2], ...]}, ...]
+            :return: 安全点坐标数组，形状为(N, 2)的numpy数组
+            """
+        # ----------------------------------
+        # 步骤1：生成候选网格点
+        # ----------------------------------
+        # 生成东西和南北方向的坐标序列（ENU坐标系）
+        e_coords = np.arange(-radius, radius + grid_spacing / 2, grid_spacing)
+        n_coords = np.arange(-radius, radius + grid_spacing / 2, grid_spacing)
+
+        # 创建网格点矩阵并展平
+        e_grid, n_grid = np.meshgrid(e_coords, n_coords)
+        points = np.column_stack([e_grid.ravel(), n_grid.ravel()])
+
+        # 筛选圆形范围内的点
+        distances = np.linalg.norm(points, axis=1)
+        candidate_points = points[distances <= radius]
+
+        # ----------------------------------
+        # 步骤3：过滤建筑区域内的点
+        # ----------------------------------
+        safe_points = []
+        for pt in candidate_points:
+            # in_building = False
+            # point=Point(pt)
+            # # 遍历所有建筑
+            # for building in buildings:
+            #     polygon = np.array(building["polygon"])
+            #     # 检查点是否在当前建筑内
+            #     if is_inside_polygon(pt, polygon):
+            #         in_building = True
+            #         break
+            # # 仅保留不在任何建筑内的点
+            # if not in_building:
+            #     safe_points.append(pt)
+            if not any(Point(pt[0], pt[1]).buffer(1e-2).within(building) for building in buildings):
+                safe_points.append((pt[0], pt[1], 0))
+
+        grid_points_ecef = np.array([CoordinateTransform().convert_enu_to_ecef(pt[0], pt[1], pt[2],
+                                                                                initial_position['lat'],
+                                                                                initial_position['lon'],
+                                                                                initial_position['alt']) for pt in safe_points])
+        # return np.array(safe_points)
+        return grid_points_ecef
 
     @staticmethod
     def generate_search_grid_enu(radius, grid_spacing, buildings):
         """
-        生成以中心点为原点、排除建筑区域的圆形网格点
-        :param radius: 搜索半径（米）
-        :param grid_spacing: 网格间距（米）
-        :param buildings: 建筑列表，每个元素包含ENU坐标系下的多边形顶点
-                         示例结构：[{"polygon": [[e1,n1], [e2,n2], ...]}, ...]
-        :return: 安全点坐标数组，形状为(N, 2)的numpy数组
-        """
+            生成以中心点为原点、排除建筑区域的圆形网格点
+            :param radius: 搜索半径（米）
+            :param grid_spacing: 网格间距（米）
+            :param buildings: 建筑列表，每个元素包含ENU坐标系下的多边形顶点
+                             示例结构：[{"polygon": [[e1,n1], [e2,n2], ...]}, ...]
+            :return: 安全点坐标数组，形状为(N, 2)的numpy数组
+            """
         # ----------------------------------
         # 步骤1：生成候选网格点
         # ----------------------------------
@@ -118,3 +170,5 @@ class GridGenerator:
                 safe_points.append((pt[0], pt[1], 0))
 
         return np.array(safe_points)
+
+
