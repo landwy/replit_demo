@@ -35,13 +35,15 @@ class DataParser:
                 else:
                     # Parse X, Y, Z, SNR, and Satellite ID
                     data = line.split()
-                    if current_epoch and len(data) >= 5:  # Ensure we have all fields including Satellite ID
+                    if current_epoch and len(data) >= 5 and float(data[0])!=0:  # Ensure we have all fields including Satellite ID
                         sat_data = {
                             'X': float(data[0]),
                             'Y': float(data[1]),
                             'Z': float(data[2]),
                             'SNR': float(data[3]),
-                            'satellite_id': data[4]  # Add satellite ID
+                            'satellite_id': data[4],  # Add satellite ID
+                            'azimuth': data[5],
+                            'elevation': data[6],
                         }
                         satellite_data[current_epoch].append(sat_data)
                         logging.debug(f"Added satellite {data[4]} with SNR {data[3]}")
@@ -158,6 +160,141 @@ class DataParser:
                 buildings.append({"polygon": polygon, "height": height, "center": center_point})
 
             return buildings
+#
+# import pandas as pd
+# import os
+# #--------------------------------------合并文件夹中的所有csv文件---------------------------------------------------
+# # 设定 CSV 文件所在的目录
+# folder_path = "F:\\GNSSdata\\rf_train\\merged_snr"
+#
+# # 获取所有 CSV 文件
+# csv_files = [f for f in os.listdir(folder_path) if f.endswith('.csv')]
+#
+# # 读取并合并所有 CSV 文件
+# df_list = [pd.read_csv(os.path.join(folder_path, file)) for file in csv_files]
+# merged_df = pd.concat(df_list, ignore_index=True)
+#
+# # 保存合并后的文件
+# merged_df.to_csv("F:\\GNSSdata\\rf_train\\merged_snr\\merged_snr.csv", index=False)
+
+#-------------------------------------------------取snr最大值-------------------------------------------------
+# import pandas as pd
+#
+# # 读取 CSV 文件
+# df = pd.read_csv('F:\\GNSSdata\\rf_train\\merged_stat.csv')
+#
+# # 假设 SNR 数据存储在 'snr1' 和 'snr2' 列
+# df['snr'] = df[['SNR0', 'SNR1']].max(axis=1)
+#
+# # 删除原来的 SNR 列（如果不需要保留）
+# df.drop(columns=['SNR0', 'SNR1'], inplace=True)
+#
+# # 保存到新的 CSV 文件
+# df.to_csv('F:\\GNSSdata\\rf_train\\merged_snr_stat.csv', index=False)
+#
+# print("合并完成，结果保存在 merged_snr_stat.csv")
+
+
+#-------------------------------------------读取.stat文件并存储为csv文件---------------------------------------------------
+# import csv
+# import datetime
+#
+#
+# def gps_time(gps_week, gps_tow):
+#     """将 GPS 周和周内秒转换为 gps时间"""
+#     gps_epoch = datetime.datetime(1980, 1, 6, 0, 0, 0)  # GPS时间起点
+#
+#     gtime = gps_epoch + datetime.timedelta(weeks=gps_week, seconds=gps_tow)
+#     return gtime.strftime("%Y/%m/%d %H:%M:%S")
+#
+#
+# # 输入和输出文件路径
+# input_file = "F:\\GNSSdata\\KLTDataset\\GNSS\\20231109\\spp.pos.stat"  # 替换为你的文件路径
+# output_file = "F:\\GNSSdata\\rf_train\\stat.csv"
+#
+# # 存储解析后的数据
+# satellite_data = []
+#
+# # 读取文件
+# with open(input_file, "r") as f:
+#     gps_week, gps_tow = None, None  # 存储GPS时间信息
+#     for line in f:
+#         parts = line.strip().split(",")
+#         if not parts:
+#             continue
+#
+#         if parts[0] == "$CLK":
+#             gps_week = int(parts[1])  # GPS周
+#             gps_tow = float(parts[2])  # GPS周内秒
+#
+#         elif parts[0] == "$SAT" and gps_week is not None and gps_tow is not None:
+#             satellite = parts[3]  # 卫星 ID
+#
+#             azimuth = float(parts[5])   #方位角
+#             elevation = float(parts[6]) #仰角
+#             resp = float(parts[7])  # 伪距残差 (resp)
+#             # snr0 = float(parts[9])  # 信噪比 (SNR)
+#             # snr1 = float(parts[10])
+#             snr = float(max(parts[9],parts[10]))
+#             time = gps_time(gps_week, gps_tow)  # 转换时间
+#
+#             # 保存数据
+#             satellite_data.append([time, satellite, snr, resp, azimuth, elevation])
+#
+# # 将数据写入 CSV 文件
+# with open(output_file, "w", newline="") as csvfile:
+#     writer = csv.writer(csvfile)
+#     writer.writerow(["time", "satellite", "snr", "resp", "azimuth", "elevation"])  # 写入表头
+#     writer.writerows(satellite_data)
+#
+# print(f"数据已保存至 {output_file}")
+
+
+
+#---------------------------------------将stat.csv中的resp值加入到merged_data合并-----------------------------------------
+# import pandas as pd
+#
+# # 读取 CSV 文件
+# stat = pd.read_csv("F:\\GNSSdata\\rf_train\\stat.csv")
+# merged_data = pd.read_csv("F:\\GNSSdata\\rf_train\\merged_snr.csv")
+#
+# # 确保时间列的格式一致
+# # stat421["time"] = pd.to_datetime(stat421["time"])
+# # merged_data421["time"] = pd.to_datetime(merged_data421["time"])
+#
+# # 选择 stat需要合并的列
+# stat_subset = stat[["time", "satellite", "resp"]]
+#
+# # 通过 "时间" 和 "卫星ID" 进行合并，仅保留匹配的数据
+# merged_result = pd.merge(merged_data, stat_subset, on=["time", "satellite"], how="inner")
+#
+#
+# # 保存合并后的数据
+# merged_result.to_csv("F:\\GNSSdata\\rf_train\\merged_snr_stat1.csv", index=False)
+# print("合并完成，结果已保存至 merged_snr_stat1.csv")
+
+
+
+#------------------------------------------伪距残差归一化-------------------------------------------
+# import pandas as pd
+#
+# file_path = 'F:\\GNSSdata\\rf_train\\merged_snr_stat1.csv'
+# df = pd.read_csv(file_path, dtype={'time': str})
+# print(df.head(10))
+#
+# # 处理SNR特征
+# df['snr'] = df['snr'] / 1000
+#
+# df['normalized_resp'] = df.groupby('time')['resp'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
+#
+#
+# # 保存修正后的数据
+# df.to_csv("F:\\GNSSdata\\rf_train\\normalized.csv", index=False)
+
+
+
+
+
 
 
 

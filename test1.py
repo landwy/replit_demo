@@ -103,3 +103,5 @@
 # # 检测遮挡
 # intersects = does_intersect_trimesh(building_enu, building_height, satellite_enu, ground_enu)
 # print(f"信号被遮挡: {intersects}")
+
+

@@ -142,7 +142,10 @@ class CoordinateTransform:
         """ WGS84 转 ECEF """
         return self.wgs_to_ecef.transform(lon, lat, alt)
 
-    def convert_ecef_to_enu(self,x, y, z, ref_lat, ref_lon, ref_alt):
+    def convert_wgs_to_egm96(self, lon, lat, alt):
+        return self.wgs84_to_egm96.transform(lon, lat, alt)  # h 是原始高度
+
+    def convert_ecef_to_enu(self,x, y, z, ref_lon, ref_lat, ref_alt):
         """将 ECEF 坐标转换为以 (ref_lat, ref_lon, ref_alt) 为原点的 ENU 坐标"""
         x_ref, y_ref, z_ref = self.wgs_to_ecef.transform(ref_lon, ref_lat, ref_alt)
         dx, dy, dz = x - x_ref, y - y_ref, z - z_ref
@@ -160,7 +163,7 @@ class CoordinateTransform:
         return e, n, u
 
 
-    def convert_enu_to_ecef(self, e, n, u, ref_lat, ref_lon, ref_alt):
+    def convert_enu_to_ecef(self, e, n, u, ref_lon, ref_lat, ref_alt):
         """将 ENU 坐标转换为 ECEF 坐标"""
         ref_lat_rad = np.radians(ref_lat)
         ref_lon_rad = np.radians(ref_lon)
@@ -179,8 +182,6 @@ class CoordinateTransform:
 
         return x, y, z
 
-    def convert_wgs_to_egm96(self, lon, lat, alt):
-        return self.wgs84_to_egm96.transform(lon, lat, alt)  # h 是原始高度
 
 # transformer = CoordinateTransform()
 # # 测试 ECEF -> WGS84

@@ -206,6 +206,7 @@ def preprocess_buildings(buildings):
     """预处理建筑物，将其转换为 ENU 坐标网格"""
     #ref_lon, ref_lat, ref_alt = CoordinateTransform.convert_ecef_to_wgs(*ref_ecef)
     # ref_lon, ref_lat, ref_alt = CoordinateTransform.convert_ecef_to_wgs(ref_ecef[0], ref_ecef[1], ref_ecef[2])
+    coord_transform = CoordinateTransform()
 
 
     building_meshes = []
@@ -214,7 +215,9 @@ def preprocess_buildings(buildings):
         height = building["height"]
 
         # 将建筑底面转换为 ECEF 坐标
-        bottom_ecef = [CoordinateTransform().convert_wgs_to_ecef(lat, lon, 12) for lat, lon in polygon_geo.exterior.coords]
+        # bottom_ecef = [CoordinateTransform().convert_wgs_to_ecef(lat, lon, 12) for lat, lon in polygon_geo.exterior.coords]
+        bottom_ecef = np.array(
+            [coord_transform.convert_wgs_to_ecef(lat, lon, 12) for lat, lon in polygon_geo.exterior.coords])
         bottom_ecef = bottom_ecef[:-1]  #去掉最后一个重复点
 
         # 顶面角点（高度叠加）
@@ -286,28 +289,28 @@ def is_occluded_ecef(sat_ecef, grid_ecef, buildings_meshes_ecef):
                 return True
         return False
 
-    def is_occluded(building_meshes, satellite_ecef, ground_ecef):
-        """检测卫星到地面的线段是否被任意建筑遮挡"""
-        ref_lon, ref_lat, ref_alt = CoordinateTransform().convert_ecef_to_wgs(*ground_ecef)
-
-        sat_e, sat_n, sat_u = CoordinateTransform().convert_ecef_to_enu(*satellite_ecef, ref_lat, ref_lon, ref_alt)
-        grd_e, grd_n, grd_u = CoordinateTransform().convert_ecef_to_enu(*ground_ecef, ref_lat, ref_lon, ref_alt)
-
-        start = np.array([sat_e, sat_n, sat_u])
-        end = np.array([grd_e, grd_n, grd_u])
-        direction = end - start
-        length = np.linalg.norm(direction)
-        if length < 1e-6:
-            return False  # 忽略重合点
-        direction /= length
-
-        for mesh in building_meshes:
-            locations, _, _ = mesh.ray.intersects_location(ray_origins=[start], ray_directions=[direction])
-            if len(locations) > 0:
-                t = np.dot(locations - start, direction) / length
-                if any((t >= 0) & (t <= 1)):
-                    return True  # 存在遮挡
-        return False
+    # def is_occluded(building_meshes, satellite_ecef, ground_ecef):
+    #     """检测卫星到地面的线段是否被任意建筑遮挡"""
+    #     ref_lon, ref_lat, ref_alt = CoordinateTransform().convert_ecef_to_wgs(*ground_ecef)
+    #
+    #     sat_e, sat_n, sat_u = CoordinateTransform().convert_ecef_to_enu(*satellite_ecef, ref_lat, ref_lon, ref_alt)
+    #     grd_e, grd_n, grd_u = CoordinateTransform().convert_ecef_to_enu(*ground_ecef, ref_lat, ref_lon, ref_alt)
+    #
+    #     start = np.array([sat_e, sat_n, sat_u])
+    #     end = np.array([grd_e, grd_n, grd_u])
+    #     direction = end - start
+    #     length = np.linalg.norm(direction)
+    #     if length < 1e-6:
+    #         return False  # 忽略重合点
+    #     direction /= length
+    #
+    #     for mesh in building_meshes:
+    #         locations, _, _ = mesh.ray.intersects_location(ray_origins=[start], ray_directions=[direction])
+    #         if len(locations) > 0:
+    #             t = np.dot(locations - start, direction) / length
+    #             if any((t >= 0) & (t <= 1)):
+    #                 return True  # 存在遮挡
+    #     return False
 
 # def is_occluded_concatenate(buildings_meshes_ecef, sat_ecef, grid_ecef):
 #     """

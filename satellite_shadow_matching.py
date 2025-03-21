@@ -50,7 +50,7 @@ class SatelliteShadowMatching:
             polygon = building["polygon"]
             ecef_points = [self.transformer.convert_wgs_to_ecef(lat, lon, 12) for lat, lon in polygon.exterior.coords]
             # 转换为 ENU 坐标（相对于 ground 点）
-            enu_2d = [self.transformer.convert_ecef_to_enu(x, y, z, ref_lat, ref_lon, ref_alt)[:2] for x, y, z
+            enu_2d = [self.transformer.convert_ecef_to_enu(x, y, z, ref_lon, ref_lat, ref_alt)[:2] for x, y, z
                       in ecef_points]
 
             enu_2d = [(round(p[0], 6), round(p[1], 6)) for p in enu_2d]
@@ -189,15 +189,14 @@ class SatelliteShadowMatching:
         # proj_lla = Proj(proj='latlong', ellps='WGS84', datum='WGS84')
         for epoch, result in results.items():
             lon, lat, alt = self.transformer.convert_ecef_to_wgs(result['X'], result['Y'], result['Z'])
-            lon, lat, alt = self.transformer.convert_wgs_to_egm96(lon, lat, alt)
-            # lon, lat, alt = transformer(result['X'], result['Y'], result['Z'], radians=False)
             #pnt = kml.newpoint(name=f"Epoch {epoch}")
             pnt = kml.newpoint()
             pnt.coords = [(lon, lat, alt)]  # KML 需要 (经度, 纬度, 高度)
-            #pnt.altitudemode = simplekml.AltitudeMode.clamptoground  # 绝对高度
+            pnt.altitudemode = simplekml.AltitudeMode.clamptoground  # 绝对高度
             # pnt.description = f"Score: {data['score']}\nBest Points: {data['num_best_points']}"
             pnt.style.labelstyle.scale = 1  # 文字大小
-            pnt.style.iconstyle.icon.href = "http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png"
+            # pnt.style.iconstyle.icon.href = "http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png"
+            pnt.style.iconstyle.icon.href = "icons/green16.png"
 
         kml.save("output\\sm_pos.kml")
 
