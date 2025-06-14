@@ -5,9 +5,10 @@ import trimesh
 from trimesh.ray import ray_triangle
 
 class VisibilityCalculator:
-    def __init__(self, snr_threshold=30):
+    def __init__(self, snr_threshold=33):
         self.snr_threshold = snr_threshold
         self.coord_transform = CoordinateTransform()
+        self.geoid_height = 7.1
 
 
     @staticmethod
@@ -30,10 +31,6 @@ class VisibilityCalculator:
         :param buildings: 解析出的建筑信息列表
         :return: 是否被遮挡 (True = 遮挡, False = 无遮挡)
         """
-        #ground_x, ground_y, ground_z = ground_ecef
-        #satellite_point = (sat_ecef['X'], sat_ecef['Y'], sat_ecef['Z'])
-        # #signal_path = LineString([satellite_point, ground_point])  # 生成卫星到地面点的直线
-
         sat_x, sat_y, sat_z = sat_ecef['X'], sat_ecef['Y'], sat_ecef['Z']
         ground_x, ground_y, ground_z = ground_ecef['X'], ground_ecef['Y'], ground_ecef['Z']
         signal_path = LineString([(sat_x, sat_y, sat_z), (ground_x, ground_y, ground_z)])
@@ -46,10 +43,10 @@ class VisibilityCalculator:
             building_walls = []
             coords = list(base_polygon.exterior.coords)
             for i in range(len(coords) - 1):
-                p1 = (coords[i][0], coords[i][1], 0)
-                p2 = (coords[i + 1][0], coords[i + 1][1], 0)
-                p3 = (coords[i + 1][0], coords[i + 1][1], height)
-                p4 = (coords[i][0], coords[i][1], height)
+                p1 = (coords[i][0], coords[i][1], 7.1)
+                p2 = (coords[i + 1][0], coords[i + 1][1], 7.1)
+                p3 = (coords[i + 1][0], coords[i + 1][1], 7.1 + height)
+                p4 = (coords[i][0], coords[i][1], 7.1 + height)
 
                 wall = Polygon([p1, p2, p3, p4])
                 building_walls.append(wall)
@@ -64,7 +61,7 @@ class VisibilityCalculator:
         """
         Check satellite visibility based on SNR
         """
-        return snr >= self.snr_threshold * 1000
+        return snr >= self.snr_threshold
 
 
 
@@ -202,7 +199,7 @@ def create_building_mesh(bottom_ecef,top_ecef):
     return trimesh.Trimesh(vertices=vertices, faces=faces)
 
 
-def preprocess_buildings(buildings):
+def preprocess_buildings(buildings,ref_alt):
     """预处理建筑物，将其转换为 ENU 坐标网格"""
     #ref_lon, ref_lat, ref_alt = CoordinateTransform.convert_ecef_to_wgs(*ref_ecef)
     # ref_lon, ref_lat, ref_alt = CoordinateTransform.convert_ecef_to_wgs(ref_ecef[0], ref_ecef[1], ref_ecef[2])
@@ -215,16 +212,14 @@ def preprocess_buildings(buildings):
         height = building["height"]
 
         # 将建筑底面转换为 ECEF 坐标
-        # bottom_ecef = [CoordinateTransform().convert_wgs_to_ecef(lat, lon, 12) for lat, lon in polygon_geo.exterior.coords]
         bottom_ecef = np.array(
-            [coord_transform.convert_wgs_to_ecef(lat, lon, 12) for lat, lon in polygon_geo.exterior.coords])
+            [coord_transform.convert_wgs_to_ecef(lat, lon, ref_alt-1) for lat, lon in polygon_geo.exterior.coords])
         bottom_ecef = bottom_ecef[:-1]  #去掉最后一个重复点
 
         # 顶面角点（高度叠加）
         # top_ecef = [(x, y, z + height * np.cos(np.radians(lat))) for (lat, _), (x, y, z) in zip(polygon_geo.exterior.coords, bottom_ecef)]
         top_ecef = [(x, y, z + height) for (x, y, z) in bottom_ecef]
         top_ecef = top_ecef[:-1]  #去掉最后一个重复点
-        # print(bottom_ecef)
 
         # 创建建筑 3D 网格
         building_mesh = create_building_mesh(np.array(bottom_ecef),np.array(top_ecef))
@@ -289,83 +284,142 @@ def is_occluded_ecef(sat_ecef, grid_ecef, buildings_meshes_ecef):
                 return True
         return False
 
-    # def is_occluded(building_meshes, satellite_ecef, ground_ecef):
-    #     """检测卫星到地面的线段是否被任意建筑遮挡"""
-    #     ref_lon, ref_lat, ref_alt = CoordinateTransform().convert_ecef_to_wgs(*ground_ecef)
-    #
-    #     sat_e, sat_n, sat_u = CoordinateTransform().convert_ecef_to_enu(*satellite_ecef, ref_lat, ref_lon, ref_alt)
-    #     grd_e, grd_n, grd_u = CoordinateTransform().convert_ecef_to_enu(*ground_ecef, ref_lat, ref_lon, ref_alt)
-    #
-    #     start = np.array([sat_e, sat_n, sat_u])
-    #     end = np.array([grd_e, grd_n, grd_u])
-    #     direction = end - start
-    #     length = np.linalg.norm(direction)
-    #     if length < 1e-6:
-    #         return False  # 忽略重合点
-    #     direction /= length
-    #
-    #     for mesh in building_meshes:
-    #         locations, _, _ = mesh.ray.intersects_location(ray_origins=[start], ray_directions=[direction])
-    #         if len(locations) > 0:
-    #             t = np.dot(locations - start, direction) / length
-    #             if any((t >= 0) & (t <= 1)):
-    #                 return True  # 存在遮挡
-    #     return False
+#--------------------------------------------------------ECEF下的遮挡判断，只使用临街的侧面----------------------
 
-# def is_occluded_concatenate(buildings_meshes_ecef, sat_ecef, grid_ecef):
-#     """
-#     判断卫星到地面点的视线是否被建筑遮挡（ECEF坐标系）
-#     :param sat_ecef: 卫星ECEF坐标 (x, y, z)
-#     :param grid_ecef: 地面点ECEF坐标 (x, y, z)
-#     :param buildings_meshes_ecef: 建筑的三维网格列表 [trimesh.Trimesh, ...]
-#     :return: True（被遮挡） / False（未被遮挡）
-#     """
-#     ray_origin = np.array(sat_ecef)
-#     ray_direction = np.array(grid_ecef) - ray_origin
-#     ray_length = np.linalg.norm(ray_direction)
-#     ray_direction_normalized = ray_direction / ray_length
-#
-#     # 合并所有建筑网格并构建加速结构
-#     all_buildings = trimesh.util.concatenate(buildings_meshes_ecef)
-#     intersector = trimesh.ray.ray_pyembree.RayMeshIntersector(all_buildings)
-#
-#     # 检测相交
-#     locations, _, _ = intersector.intersects_location(
-#         ray_origins=[ray_origin],
-#         ray_directions=[ray_direction_normalized]
-#     )
-#     return any(np.linalg.norm(loc - ray_origin) < ray_length for loc in locations)
+def intersect_line_triangle(ray_origin, ray_vector, triangle):
+    """
+    Möller–Trumbore algorithm 判断线是否与三角面片相交
+    """
+    EPSILON = 1e-6
+    vertex0, vertex1, vertex2 = triangle
+    edge1 = vertex1 - vertex0
+    edge2 = vertex2 - vertex0
+    h = np.cross(ray_vector, edge2)
+    a = np.dot(edge1, h)
+
+    if -EPSILON < a < EPSILON:
+        return False  # 平行
+
+    f = 1.0 / a
+    s = ray_origin - vertex0
+    u = f * np.dot(s, h)
+
+    if u < 0.0 or u > 1.0:
+        return False
+
+    q = np.cross(s, edge1)
+    v = f * np.dot(ray_vector, q)
+
+    if v < 0.0 or u + v > 1.0:
+        return False
+
+    t = f * np.dot(edge2, q)
+
+    if t > EPSILON and t < 1.0:  # t<1.0 表示线段内
+        return True
+
+    return False
 
 
-# ------------------  主程序 ------------------
-#
-# # 示例建筑数据
-# buildings = [
-#     {
-#         "polygon": [(40.7128, -74.0060), (40.7128, -74.0055), (40.7123, -74.0055), (40.7123, -74.0060)],
-#         "height": 50.0,
-#         "center": geodetic_to_ecef(40.7126, -74.0058, 0)
-#     }
-# ]
-#
-# satellite_positions = [(x_sat, y_sat, z_sat) for _ in range(30)]  # 30 颗卫星
-# ground_points = [(x_ground, y_ground, z_ground) for _ in range(3000)]  # 3000 个地面点
-#
-# occlusion_results = {}
-#
-# for ground_ecef in ground_points:
-#     if ground_ecef not in occlusion_results:
-#         occlusion_results[ground_ecef] = {}
-#
-#     building_meshes = preprocess_buildings(buildings, ground_ecef)
-#
-#     for sat_ecef in satellite_positions:
-#         for building in buildings:
-#             if not should_check_building(sat_ecef, ground_ecef, building["center"]):
-#                 continue
-#
-#             occluded = is_occluded(building_meshes, sat_ecef, ground_ecef)
-#             occlusion_results[ground_ecef][sat_ecef] = occluded
-#
-# print("遮挡计算完成！")
+def preprocess_building_sides(buildings):
+    """
+    预处理建筑侧边三角面片
+    :param buildings: 原始建筑列表
+    :param transformer: WGS84转ECEF转换器对象
+    :return: 所有建筑三角面片的列表，每个元素是长度为3的顶点数组（numpy数组）
+    """
+    transformer = CoordinateTransform()
+    building_triangles = []
 
+    for building in buildings:
+        height = building['height']
+        p1 = building['P1']
+        p2 = building['P2']
+
+        # 坐标转换：WGS84 -> ECEF
+        p1_ecef = np.array(transformer.convert_wgs_to_ecef(p1[0], p1[1], 0))
+        p2_ecef = np.array(transformer.convert_wgs_to_ecef(p2[0], p2[1], 0))
+        p1_top = np.array(transformer.convert_wgs_to_ecef(p1[0], p1[1], height))
+        p2_top = np.array(transformer.convert_wgs_to_ecef(p2[0], p2[1], height))
+
+        # 构造两组三角形面片代表一个矩形面
+        triangle1 = [p1_ecef, p2_ecef, p1_top]
+        triangle2 = [p2_ecef, p2_top, p1_top]
+
+        building_triangles.append(triangle1)
+        building_triangles.append(triangle2)
+
+    return building_triangles
+
+def is_line_blocked(sat_pos_ecef, ground_pos_ecef, building_triangles):
+    """
+    检查视线是否与任意三角形建筑侧面相交
+    :param sat_pos_ecef: 卫星ECEF坐标
+    :param ground_pos_ecef: 地面ECEF坐标
+    :param building_triangles: 预处理得到的建筑三角形面片列表
+    :return: True if any intersection found, else False
+    """
+    sat = np.array(sat_pos_ecef)
+    ground = np.array(ground_pos_ecef)
+    line_vec = ground - sat
+
+    for triangle in building_triangles:
+        if intersect_line_triangle(sat, line_vec, triangle):
+            return True
+    return False
+
+
+#---------------------------------------------ENU下遮挡判断-------------------------------------------------
+
+
+def preprocess_building_sides_enu(buildings,initial_position):
+    """
+    预处理建筑侧边三角面片
+    :param buildings: 原始建筑列表
+    :param transformer: WGS84转ECEF转换器对象
+    :return: 所有建筑三角面片的列表，每个元素是长度为3的顶点数组（numpy数组）
+    """
+    transformer = CoordinateTransform()
+    building_triangles = []
+
+    for building in buildings:
+        height = building['height']
+        p1 = building['P1']
+        p2 = building['P2']
+
+        # 坐标转换：WGS84 -> ECEF
+        p1_ecef = np.array(transformer.convert_wgs_to_ecef(p1[0], p1[1], 0))
+        p2_ecef = np.array(transformer.convert_wgs_to_ecef(p2[0], p2[1], 0))
+        p1_top = np.array(transformer.convert_wgs_to_ecef(p1[0], p1[1], height))
+        p2_top = np.array(transformer.convert_wgs_to_ecef(p2[0], p2[1], height))
+
+        p1_enu = np.array(transformer.convert_ecef_to_enu(p1_ecef[0], p1_ecef[1], p1_ecef[2],initial_position['lon'],initial_position['lat'],initial_position['alt']))
+        p2_enu = np.array(transformer.convert_ecef_to_enu(p2_ecef[0], p2_ecef[1], p2_ecef[2], initial_position['lon'],initial_position['lat'],initial_position['alt']))
+        p1_top_enu = np.array(transformer.convert_ecef_to_enu(p1_top[0], p1_top[1], p1_top[2], initial_position['lon'],initial_position['lat'],initial_position['alt']))
+        p2_top_enu = np.array(transformer.convert_ecef_to_enu(p2_top[0], p2_top[1], p2_top[2], initial_position['lon'],initial_position['lat'],initial_position['alt']))
+
+        # 构造两组三角形面片代表一个矩形面
+        triangle1 = [p1_enu, p2_enu, p1_top_enu]
+        triangle2 = [p2_enu, p2_top_enu, p1_top_enu]
+
+        building_triangles.append(triangle1)
+        building_triangles.append(triangle2)
+
+    return building_triangles
+
+def is_line_blocked_enu(sat_pos_enu, ground_pos_enu, building_triangles_enu):
+    """
+    检查视线是否与任意三角形建筑侧面相交
+    :param sat_pos_ecef: 卫星ECEF坐标
+    :param ground_pos_ecef: 地面ECEF坐标
+    :param building_triangles: 预处理得到的建筑三角形面片列表
+    :return: True if any intersection found, else False
+    """
+    sat = np.array(sat_pos_enu)
+    ground = np.array(ground_pos_enu)
+    line_vec = ground - sat
+
+    for triangle in building_triangles_enu:
+        if intersect_line_triangle(sat, line_vec, triangle):
+            return True
+    return False

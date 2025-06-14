@@ -1,94 +1,7 @@
-# # import pickle
-# # import csv
-# import pyrtklib as prl
-# from datetime import datetime, timezone, timedelta
-# # import logging
-# import pandas as pd
-# import pickle
-#
-# # ---------------------------------------------------合并标签文件和卫星信息文件------------------------------------------------
-# def satindex2name(sats):
-#     name = prl.Arr1Dchar(4)
-#     if not isinstance(sats,list):
-#         prl.satno2id(sats+1,name)
-#         return name.ptr
-#     names = []
-#     for i in sats:
-#         prl.satno2id(i+1,name)
-#         names.append(name.ptr)
-#     return names
-#
-#
-# # 解析txt文件
-# def parse_txt(file_path):
-#     with open(file_path, 'r', encoding='utf-8') as f:
-#         lines = f.readlines()
-#
-#     data = []
-#     current_time = None
-#
-#     for line in lines:
-#         parts = line.strip().split()
-#         if not parts:
-#             continue
-#
-#         if parts[0] == 'time':
-#             # 去掉毫秒，只保留秒
-#             current_time = parts[1] + " " + parts[2].split('.')[0]
-#         else:
-#             if current_time:
-#                 x, y, z = map(float, parts[0:3])
-#                 snr0 = float(parts[3])
-#                 snr1 = float(parts[4])
-#                 satellite_name = parts[5]
-#                 azimuth = float(parts[6])
-#                 elevation = float(parts[7])
-#
-#                 data.append([current_time, satellite_name, x, y, z, snr0, snr1, azimuth, elevation])
-#
-#     return pd.DataFrame(data, columns=["time", "satellite", "X", "Y", "Z", "SNR0","SNR1", "azimuth", "elevation"])
-#
-#
-# # 读取.pkl标签文件
-# def load_pkl(file_path):
-#     with open(file_path, 'rb') as f:
-#         labels = pickle.load(f)
-#
-#     pkl_data = {}
-#     for label in labels:
-#         # 转换 UNIX 时间戳，并去掉毫秒
-#         timestamp = datetime.fromtimestamp(label[0], tz=timezone.utc) + timedelta(seconds=18)
-#         timestamp_str = timestamp.strftime("%Y/%m/%d %H:%M:%S")  # 保留到秒
-#
-#         los_satellites = label[2]  # LOS卫星索引
-#         los_satellite_names = set(satindex2name(los_satellites))
-#         pkl_data[timestamp_str] = los_satellite_names
-#
-#     return pkl_data  # {GPS时间字符串: {LOS卫星名称}}
-#
-#
-# # 合并数据
-# def merge_data(txt_df, pkl_data):
-#     txt_df["LOS"] = txt_df.apply(lambda row: 1 if row["satellite"] in pkl_data.get(row["time"], set()) else 0, axis=1)
-#     return txt_df
-#
-#
-# # 运行脚本
-# def run_merge_data(txt_file, pkl_file, output_csv):
-#     txt_df = parse_txt(txt_file)
-#     pkl_data = load_pkl(pkl_file)
-#     merged_df = merge_data(txt_df, pkl_data)
-#     merged_df.to_csv(output_csv, index=False)
-#     print(f"Merged data saved to {output_csv}")
-#
-# #示例调用
-# txt_file_path = "F:\\GNSSdata\KLTDataset\\label\\1109_KLT1_421\\satpos421.txt"
-# pkl_file_path = "F:\\GNSSdata\KLTDataset\\label\\1109_KLT1_421\\nlos.pkl"
-# csv_file_path = "F:\\GNSSdata\KLTDataset\\label\\1109_KLT1_421\\merged_data421.csv"
-#
-# run_merge_data(txt_file_path, pkl_file_path, csv_file_path)
 
-#------------------------------------------------------------------------------------------------------------------------\
+
+
+#-------------------------------------------------模型训练-----------------------------------------------------------\
 # -*- coding: utf-8 -*-
 import pandas as pd
 import numpy as np
@@ -98,7 +11,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.inspection import permutation_importance
 import matplotlib.pyplot as plt
 import joblib
-
+import os
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV
 from xgboost import XGBClassifier
@@ -113,11 +26,11 @@ def load_data(file_path):
     #df['constellation'] = df['satellite'].str[0].map({'G': 0, 'C': 1, 'R': 2, 'E': 3, 'J': 4})
 
     # 添加 SNR/仰角比值特征
-    df['snr_ratio'] = df['snr'] / (df['elevation'] + 1e-5)  # 避免除0
+    df['snr_ratio'] = df['snr'] / (df['el'] + 1e-5)  # 避免除0
     #df['sr_ratio'] = df['snr'] / (df['normalized_resp'] + 1e-5)
 
     # 选择特征
-    X = df[['elevation', 'snr', 'normalized_resp']]
+    X = df[['el', 'snr', 'norm_resp']]
     y = df['LOS']
 
     return X, y
@@ -155,7 +68,7 @@ def train_model(X_train, y_train):
     model = XGBClassifier(
         n_estimators=200,
         max_depth=6,
-        learning_rate=0.1,
+        learning_rate=0.2,
         scale_pos_weight=len(y_train[y_train == 0]) / len(y_train[y_train == 1])*1.7,  # 处理类别不均衡
         random_state=42,
 
@@ -213,63 +126,127 @@ def evaluate_model(model, X_test, y_test):
     # 打印评估指标
     print(f"准确度: {accuracy:.2%}")
     print("\nClassification Report:")
-    print(classification_report(y_test, y_pred, target_names=['NLOS', 'LOS']))
+    print(classification_report(y_test, y_pred, target_names=['NLOS', 'LOS'], digits=4))
 
     # 混淆矩阵可视化
     cm = confusion_matrix(y_test, y_pred)
-    plt.figure(figsize=(6, 4))
+    print("混淆矩阵的具体值：")
+    print(cm)
+
+    plt.figure(figsize=(6, 5))
     plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-    plt.title(f'Confusion Matrix (Accuracy: {accuracy:.2%})')  # 在标题中显示准确度
+    plt.title(f'Confusion Matrix (Accuracy: {accuracy:.2%})', fontsize = 16)  # 在标题中显示准确度
     plt.colorbar()
     tick_marks = [0, 1]
     plt.xticks(tick_marks, ['NLOS', 'LOS'])
     plt.yticks(tick_marks, ['NLOS', 'LOS'])
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
+    plt.ylabel('True label', fontsize=15)
+    plt.xlabel('Predicted label',fontsize=15)
+    plt.savefig("F:\\大论文\\图片\\论文图片\\Confusion Matrix.png", dpi=300, bbox_inches='tight')
     plt.show()
 
     # return accuracy  # 可选：返回准确度供后续使用
 
 # 5. 特征重要性分析-------------------------------------------------------------------------------------------------------
+# def plot_feature_importance(model, X):
+#     import matplotlib as mpl
+#
+#     # 获取特征重要性数据
+#     features = X.columns
+#     importances = model.feature_importances_
+#     result = permutation_importance(model, X, y, n_repeats=10, random_state=42)
+#     sorted_idx = result.importances_mean.argsort()[::-1]
+#
+#     # 绘图
+#     plt.figure(figsize=(10, 4))
+#
+#     # Gini重要性
+#     plt.subplot(1, 2, 1)
+#     plt.barh(range(len(features)), importances[sorted_idx], align='center')
+#     plt.yticks(range(len(features)), features[sorted_idx])
+#     plt.title("Feature Importance (Gini)")
+#
+#     # 排列重要性
+#     plt.subplot(1, 2, 2)
+#
+#     # Matplotlib版本兼容处理
+#     mpl_version = int(mpl.__version__.split('.')[0])
+#     boxplot_args = {
+#         'x': result.importances[sorted_idx].T,
+#         'vert': False,
+#         'tick_labels' if mpl_version >= 3 else 'labels': features[sorted_idx]
+#     }
+#     plt.boxplot(**boxplot_args)
+#     plt.title("Permutation Importance")
+#
+#     plt.tight_layout()
+#     plt.show()
+
+
 def plot_feature_importance(model, X):
     import matplotlib as mpl
+    import xgboost as xgb
 
-    # 获取特征重要性数据
     features = X.columns
-    importances = model.feature_importances_
+
+    # 使用 XGBoost 提供的 get_booster().get_score() 方法，获取 gain / weight / cover
+    booster = model.get_booster()
+    importance_types = ['weight', 'gain', 'cover']
+
+    # plt.figure(figsize=(16, 4))
+    #
+    # for i, importance_type in enumerate(importance_types):
+    #     importance_dict = booster.get_score(importance_type=importance_type)
+    #     # 将 dict 转为与列顺序一致的 list
+    #     importances = [importance_dict.get(f, 0) for f in features]
+    #
+    #     plt.subplot(1, 3, i + 1)
+    #     plt.barh(features, importances)
+    #     plt.title(f"Importance ({importance_type})", fontsize=18)
+    #     plt.ylabel("Score", fontsize=18)
+    #     plt.xticks(fontsize=16)
+    #     plt.yticks(fontsize=16)
+    #     plt.tight_layout()
+
+    plt.figure(figsize=(15, 12))  # 竖排时宽度小、高度大
+
+    for i, importance_type in enumerate(importance_types):
+        importance_dict = booster.get_score(importance_type=importance_type)
+        importances = [importance_dict.get(f, 0) for f in features]
+
+        plt.subplot(3, 1, i + 1)  # 改为3行1列的子图排布
+        plt.barh(features, importances)
+        plt.title(f"Importance ({importance_type})", fontsize=32)
+        plt.ylabel("Score", fontsize=28)
+        plt.xticks(fontsize=28)
+        plt.yticks(fontsize=28)
+        plt.tight_layout()
+    plt.subplots_adjust(hspace=0.5)  # 可调大，如 0.6、0.8
+    plt.savefig("F:\\大论文\\图片\\论文图片\\importance.png", dpi=300, bbox_inches='tight')
+
+    # 排列重要性（Permutation Importance）
     result = permutation_importance(model, X, y, n_repeats=10, random_state=42)
     sorted_idx = result.importances_mean.argsort()[::-1]
 
-    # 绘图
-    plt.figure(figsize=(10, 4))
-
-    # Gini重要性
-    plt.subplot(1, 2, 1)
-    plt.barh(range(len(features)), importances[sorted_idx], align='center')
-    plt.yticks(range(len(features)), features[sorted_idx])
-    plt.title("Feature Importance (Gini)")
-
-    # 排列重要性
-    plt.subplot(1, 2, 2)
-
-    # Matplotlib版本兼容处理
-    mpl_version = int(mpl.__version__.split('.')[0])
-    boxplot_args = {
-        'x': result.importances[sorted_idx].T,
-        'vert': False,
-        'tick_labels' if mpl_version >= 3 else 'labels': features[sorted_idx]
-    }
-    plt.boxplot(**boxplot_args)
-    plt.title("Permutation Importance")
-
+    plt.figure(figsize=(6, 5))
+    plt.boxplot(
+        result.importances[sorted_idx].T,
+        vert=False,
+        tick_labels=features[sorted_idx]
+    )
+    plt.title("Permutation Importance", fontsize=16)
+    plt.xticks(fontsize=15)
+    plt.yticks(fontsize=15)
     plt.tight_layout()
+    plt.savefig("F:\\大论文\\图片\\论文图片\\Permutation_Importance.png", dpi=300, bbox_inches='tight')
     plt.show()
+
 
 
 # 主程序流程
 if __name__ == "__main__":
     # 数据路径
-    csv_path = "F:\\GNSSdata\\rf_train\\normalized.csv"
+    csv_path = "F:\\GNSSdata\\rf_train\\new\\gps_bds_with_los_filtered.csv"
 
     # 加载数据
     X, y = load_data(csv_path)
@@ -287,12 +264,12 @@ if __name__ == "__main__":
     plot_feature_importance(model, X)
 
     # 保存模型
-    joblib.dump(model, 'los_classifier_rf.pkl')
+    joblib.dump(model, '..//los_classifier_rf.pkl')
 
     # 示例预测
     sample_data = pd.DataFrame(
-        [[0.78, 38.5, 0.3],  # elevation(rad), SNR, constellation
-         [0.12, 24.3, 0.79]],
-        columns=['elevation', 'snr',  'normalized_resp']
+        [[50, 38.5, 0.3],  # elevation(rad), SNR, constellation
+         [24, 24.3, 0.7]],
+        columns=['el', 'snr',  'norm_resp']
     )
     print("Sample predictions:", model.predict(sample_data))
