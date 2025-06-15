@@ -103,3 +103,35 @@
 # # 检测遮挡
 # intersects = does_intersect_trimesh(building_enu, building_height, satellite_enu, ground_enu)
 # print(f"信号被遮挡: {intersects}")
+
+
+import pickle
+import pyrtklib as prl
+import datetime
+
+def satindex2name(sats):
+    name = prl.Arr1Dchar(4)
+    if not isinstance(sats,list):
+        prl.satno2id(sats+1,name)
+        return name.ptr
+    names = []
+    for i in sats:
+        prl.satno2id(i+1,name)
+        names.append(name.ptr)
+    return names
+
+with open("F:\\GNSSdata\KLTDataset\\label\\1109_KLT1_421\\nlos.pkl",'rb') as f: # KLT1_203 for example
+   labels = pickle.load(f)
+
+
+for label in labels:
+   print("the timestamp: ", label[0]) # timestamp        datetime.datetime.fromtimestamp(label[0]).strftime('%Y/%m/%d %H:%M:%S')
+   print("all the satellite index: ", label[1]) # start from 0, please +1 to get the actual id
+   print("all the satellite name: ", satindex2name(label[1]))
+   print("LOS satellite index: ", label[2]) # the LOS satellites index
+   print("LOS satellite name: ", satindex2name(label[2]))
+   print("the corresponding flatten fisheye image shape: ", label[3].shape)
+   for satid in label[4]:
+      part = label[4][satid]
+      print(f"satellite {satid}: the part image shape of the satellite projection on the flatten fisheye image: ", part[0].shape)
+      print(f"satellite {satid}: the coordinate of satellite the projection on the flatten fisheye image ({part[1]/3.46875},{part[2]/3.46875})")

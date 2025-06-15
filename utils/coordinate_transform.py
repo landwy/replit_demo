@@ -114,6 +114,9 @@ class CoordinateTransform:
         self.wgs_to_utm = Transformer.from_crs("EPSG:4326", "EPSG:32651", always_xy=True)
         self.utm_to_wgs = Transformer.from_crs("EPSG:32651", "EPSG:4326", always_xy=True)
         self.wgs_to_ecef = Transformer.from_crs("EPSG:4326", "EPSG:4978", always_xy=True)
+        # WGS84 椭球高转换为 EGM96 地形高
+        self.wgs84_to_egm96 = Transformer.from_crs("EPSG:4326", "EPSG:3855", always_xy=True)
+
 
     def convert_ecef_to_wgs(self, x, y, z):
         """ ECEF 转 WGS84 """
@@ -139,7 +142,10 @@ class CoordinateTransform:
         """ WGS84 转 ECEF """
         return self.wgs_to_ecef.transform(lon, lat, alt)
 
-    def convert_ecef_to_enu(self,x, y, z, ref_lat, ref_lon, ref_alt):
+    def convert_wgs_to_egm96(self, lon, lat, alt):
+        return self.wgs84_to_egm96.transform(lon, lat, alt)  # h 是原始高度
+
+    def convert_ecef_to_enu(self,x, y, z, ref_lon, ref_lat, ref_alt):
         """将 ECEF 坐标转换为以 (ref_lat, ref_lon, ref_alt) 为原点的 ENU 坐标"""
         x_ref, y_ref, z_ref = self.wgs_to_ecef.transform(ref_lon, ref_lat, ref_alt)
         dx, dy, dz = x - x_ref, y - y_ref, z - z_ref
@@ -155,6 +161,27 @@ class CoordinateTransform:
         u = clat * clon * dx + clat * slon * dy + slat * dz
 
         return e, n, u
+
+
+    def convert_enu_to_ecef(self, e, n, u, ref_lon, ref_lat, ref_alt):
+        """将 ENU 坐标转换为 ECEF 坐标"""
+        ref_lat_rad = np.radians(ref_lat)
+        ref_lon_rad = np.radians(ref_lon)
+
+        slon, clon = np.sin(ref_lon_rad), np.cos(ref_lon_rad)
+        slat, clat = np.sin(ref_lat_rad), np.cos(ref_lat_rad)
+
+        dx = -slon * e - slat * clon * n + clat * clon * u
+        dy = clon * e - slat * slon * n + clat * slon * u
+        dz = clat * n + slat * u
+
+        x_ref, y_ref, z_ref = self.wgs_to_ecef.transform(ref_lon, ref_lat, ref_alt)
+        x = x_ref + dx
+        y = y_ref + dy
+        z = z_ref + dz
+
+        return x, y, z
+
 
 # transformer = CoordinateTransform()
 # # 测试 ECEF -> WGS84
